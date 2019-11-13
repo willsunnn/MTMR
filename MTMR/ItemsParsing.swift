@@ -3,7 +3,7 @@ import Foundation
 
 extension Data {
     func barItemDefinitions() -> [BarItemDefinition]? {
-        return try? JSONDecoder().decode([BarItemDefinition].self, from: utf8string!.stripComments().data(using: .utf8)!)
+           return try? JSONDecoder().decode([BarItemDefinition].self, from: utf8string!.stripComments().data(using: .utf8)!)
     }
 }
 
@@ -163,102 +163,6 @@ class SupportedTypesHolder {
             )
         },
 
-        "weather": { decoder in
-            enum CodingKeys: String, CodingKey { case refreshInterval; case units; case api_key; case icon_type }
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval)
-            let units = try container.decodeIfPresent(String.self, forKey: .units)
-            let api_key = try container.decodeIfPresent(String.self, forKey: .api_key)
-            let icon_type = try container.decodeIfPresent(String.self, forKey: .icon_type)
-            let action = try ActionType(from: decoder)
-            let longAction = try LongActionType(from: decoder)
-            return (
-                item: .weather(interval: interval ?? 1800.00, units: units ?? "metric", api_key: api_key ?? "32c4256d09a4c52b38aecddba7a078f6", icon_type: icon_type ?? "text"),
-                action,
-                longAction,
-                parameters: [:]
-            )
-        },
-
-        "currency": { decoder in
-            enum CodingKeys: String, CodingKey { case refreshInterval; case from; case to; case full }
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval)
-            let from = try container.decodeIfPresent(String.self, forKey: .from)
-            let to = try container.decodeIfPresent(String.self, forKey: .to)
-            let full = try container.decodeIfPresent(Bool.self, forKey: .full)
-            let action = try ActionType(from: decoder)
-            let longAction = try LongActionType(from: decoder)
-            return (
-                item: .currency(interval: interval ?? 600.00, from: from ?? "RUB", to: to ?? "USD", full: full ?? false),
-                action,
-                longAction,
-                parameters: [:]
-            )
-        },
-
-        "dock": { decoder in
-            enum CodingKeys: String, CodingKey { case autoResize }
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            let autoResize = try container.decodeIfPresent(Bool.self, forKey: .autoResize) ?? false
-            return (
-                item: .dock(autoResize: autoResize),
-                action: .none,
-                longAction: .none,
-                parameters: [:]
-            )
-        },
-
-        "inputsource": { _ in
-            (
-                item: .inputsource(),
-                action: .none,
-                longAction: .none,
-                parameters: [:]
-            )
-        },
-
-        "volume": { decoder in
-            enum CodingKeys: String, CodingKey { case image }
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            if var img = try container.decodeIfPresent(Source.self, forKey: .image) {
-                return (
-                    item: .volume(),
-                    action: .none,
-                    longAction: .none,
-                    parameters: [.image: .image(source: img)]
-                )
-            } else {
-                return (
-                    item: .volume(),
-                    action: .none,
-                    longAction: .none,
-                    parameters: [:]
-                )
-            }
-        },
-
-        "brightness": { decoder in
-            enum CodingKeys: String, CodingKey { case refreshInterval; case image }
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval)
-            if var img = try container.decodeIfPresent(Source.self, forKey: .image) {
-                return (
-                    item: .brightness(refreshInterval: interval ?? 0.5),
-                    action: .none,
-                    longAction: .none,
-                    parameters: [.image: .image(source: img)]
-                )
-            } else {
-                return (
-                    item: .brightness(refreshInterval: interval ?? 0.5),
-                    action: .none,
-                    longAction: .none,
-                    parameters: [:]
-                )
-            }
-        },
-
         "sleep": { _ in (
             item: .staticButton(title: "☕️"),
             action: .shellScript(executable: "/usr/bin/pmset", parameters: ["sleepnow"]),
@@ -273,29 +177,6 @@ class SupportedTypesHolder {
             parameters: [:]
         ) },
 
-        "music": { decoder in
-            enum CodingKeys: String, CodingKey { case refreshInterval }
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval)
-            return (
-                item: .music(interval: interval ?? 1800.00),
-                action: .none,
-                longAction: .none,
-                parameters: [:]
-            )
-        },
-
-        "group": { decoder in
-            enum CodingKeys: CodingKey { case items }
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            let items = try container.decode([BarItemDefinition].self, forKey: .items)
-            return (
-                item: .groupBar(items: items),
-                action: .none,
-                longAction: .none,
-                parameters: [:]
-            )
-        },
     ]
 
     static let sharedInstance = SupportedTypesHolder()
@@ -328,20 +209,23 @@ class SupportedTypesHolder {
 enum ItemType: Decodable {
     case staticButton(title: String)
     case appleScriptTitledButton(source: SourceProtocol, refreshInterval: Double)
-    case timeButton(formatTemplate: String, timeZone: String?)
-    case battery()
-    case dock(autoResize: Bool)
-    case volume()
+    case shellScriptTitledButton(source: SourceProtocol, refreshInterval: Double)
+    case timeButton(formatTemplate: String, timeZone: String?, locale: String?)
+    case battery
+    case dock(autoResize: Bool, filter: String?)
+    case volume
     case brightness(refreshInterval: Double)
     case weather(interval: Double, units: String, api_key: String, icon_type: String)
+    case yandexWeather(interval: Double)
     case currency(interval: Double, from: String, to: String, full: Bool)
-    case inputsource()
-    case music(interval: Double)
-    case groupBar(items: [BarItemDefinition])
-    case nightShift()
-    case dnd()
+    case inputsource
+    case music(interval: Double, disableMarquee: Bool)
+    case group(items: [BarItemDefinition])
+    case nightShift
+    case dnd
     case pomodoro(workTime: Double, restTime: Double)
     case network(flip: Bool)
+    case darkMode
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -356,6 +240,7 @@ enum ItemType: Decodable {
         case api_key
         case icon_type
         case formatTemplate
+        case locale
         case image
         case url
         case longUrl
@@ -364,25 +249,30 @@ enum ItemType: Decodable {
         case restTime
         case flip
         case autoResize
+        case filter
+        case disableMarquee
     }
 
     enum ItemTypeRaw: String, Decodable {
         case staticButton
         case appleScriptTitledButton
+        case shellScriptTitledButton
         case timeButton
         case battery
         case dock
         case volume
         case brightness
         case weather
+        case yandexWeather
         case currency
         case inputsource
         case music
-        case groupBar
+        case group
         case nightShift
         case dnd
         case pomodoro
         case network
+        case darkMode
     }
 
     init(from decoder: Decoder) throws {
@@ -393,6 +283,11 @@ enum ItemType: Decodable {
             let source = try container.decode(Source.self, forKey: .source)
             let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? 1800.0
             self = .appleScriptTitledButton(source: source, refreshInterval: interval)
+            
+        case .shellScriptTitledButton:
+            let source = try container.decode(Source.self, forKey: .source)
+            let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? 1800.0
+            self = .shellScriptTitledButton(source: source, refreshInterval: interval)
 
         case .staticButton:
             let title = try container.decode(String.self, forKey: .title)
@@ -401,17 +296,19 @@ enum ItemType: Decodable {
         case .timeButton:
             let template = try container.decodeIfPresent(String.self, forKey: .formatTemplate) ?? "HH:mm"
             let timeZone = try container.decodeIfPresent(String.self, forKey: .timeZone) ?? nil
-            self = .timeButton(formatTemplate: template, timeZone: timeZone)
+            let locale = try container.decodeIfPresent(String.self, forKey: .locale) ?? nil
+            self = .timeButton(formatTemplate: template, timeZone: timeZone, locale: locale)
 
         case .battery:
-            self = .battery()
+            self = .battery
 
         case .dock:
             let autoResize = try container.decodeIfPresent(Bool.self, forKey: .autoResize) ?? false
-            self = .dock(autoResize: autoResize)
+            let filterRegexString = try container.decodeIfPresent(String.self, forKey: .filter)
+            self = .dock(autoResize: autoResize, filter: filterRegexString)
 
         case .volume:
-            self = .volume()
+            self = .volume
 
         case .brightness:
             let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? 0.5
@@ -423,6 +320,10 @@ enum ItemType: Decodable {
             let api_key = try container.decodeIfPresent(String.self, forKey: .api_key) ?? "32c4256d09a4c52b38aecddba7a078f6"
             let icon_type = try container.decodeIfPresent(String.self, forKey: .icon_type) ?? "text"
             self = .weather(interval: interval, units: units, api_key: api_key, icon_type: icon_type)
+            
+        case .yandexWeather:
+            let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? 1800.0
+            self = .yandexWeather(interval: interval)
 
         case .currency:
             let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? 600.0
@@ -432,30 +333,34 @@ enum ItemType: Decodable {
             self = .currency(interval: interval, from: from, to: to, full: full)
 
         case .inputsource:
-            self = .inputsource()
+            self = .inputsource
 
         case .music:
-            let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? 1800.0
-            self = .music(interval: interval)
+            let interval = try container.decodeIfPresent(Double.self, forKey: .refreshInterval) ?? 5.0
+            let disableMarquee = try container.decodeIfPresent(Bool.self, forKey: .disableMarquee) ?? false
+            self = .music(interval: interval, disableMarquee: disableMarquee)
 
-        case .groupBar:
+        case .group:
             let items = try container.decode([BarItemDefinition].self, forKey: .items)
-            self = .groupBar(items: items)
+            self = .group(items: items)
 
         case .nightShift:
-            self = .nightShift()
+            self = .nightShift
 
         case .dnd:
-            self = .dnd()
+            self = .dnd
 
         case .pomodoro:
             let workTime = try container.decodeIfPresent(Double.self, forKey: .workTime) ?? 1500.0
             let restTime = try container.decodeIfPresent(Double.self, forKey: .restTime) ?? 600.0
             self = .pomodoro(workTime: workTime, restTime: restTime)
-            
+
         case .network:
             let flip = try container.decodeIfPresent(Bool.self, forKey: .flip) ?? false
             self = .network(flip: flip)
+
+        case .darkMode:
+            self = .darkMode
         }
     }
 }
@@ -697,12 +602,20 @@ extension String {
     }
 
     var fileData: Data? {
-        return try? Data(contentsOf: URL(fileURLWithPath: self))
+        return try? Data(contentsOf: URL(fileURLWithPath: (self as NSString).expandingTildeInPath))
     }
 
     var fileString: String? {
         var encoding: String.Encoding = .utf8
-        return try? String(contentsOfFile: self, usedEncoding: &encoding)
+        return try? String(contentsOf: URL(fileURLWithPath: (self as NSString).expandingTildeInPath), usedEncoding: &encoding)
+    }
+
+    var fileURL: URL {
+        return URL(fileURLWithPath: (self as NSString).expandingTildeInPath)
+    }
+
+    var appleScript: NSAppleScript? {
+        return NSAppleScript(source: self)
     }
 }
 
@@ -720,16 +633,6 @@ enum Align: String, Decodable {
     case left
     case center
     case right
-}
-
-extension String {
-    var fileURL: URL {
-        return URL(fileURLWithPath: self)
-    }
-
-    var appleScript: NSAppleScript? {
-        return NSAppleScript(source: self)
-    }
 }
 
 extension URL {

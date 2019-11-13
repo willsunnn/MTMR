@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeRetainedValue() as NSString: true] as NSDictionary)
 
         TouchBarController.shared.setupControlStripPresence()
+        HapticFeedbackUpdate()
 
         if let button = statusItem.button {
             button.image = #imageLiteral(resourceName: "StatusImage")
@@ -40,18 +41,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_: Notification) {}
 
-    @objc func updateIsBlockedApp() {
-        var blacklistAppIdentifiers: [String] = []
-        if let blackListed = UserDefaults.standard.stringArray(forKey: "com.toxblh.mtmr.blackListedApps") {
-            blacklistAppIdentifiers = blackListed
-        }
-        var frontmostApplicationIdentifier: String? {
-            guard let frontmostId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return nil }
-            return frontmostId
-        }
+    func HapticFeedbackUpdate() {
+        HapticFeedback.shared = AppSettings.hapticFeedbackState ? HapticFeedback() : nil
+    }
 
-        if frontmostApplicationIdentifier != nil {
-            isBlockedApp = blacklistAppIdentifiers.index(of: frontmostApplicationIdentifier!) != nil
+    @objc func updateIsBlockedApp() {
+        if let frontmostAppId = TouchBarController.shared.frontmostApplicationIdentifier {
+            isBlockedApp = AppSettings.blacklistedAppIds.firstIndex(of: frontmostAppId) != nil
         } else {
             isBlockedApp = false
         }
@@ -67,27 +63,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         task.launch()
     }
 
-    @objc func toggleControlStrip(_: Any?) {
-        TouchBarController.shared.showControlStripState = !TouchBarController.shared.showControlStripState
+    @objc func toggleControlStrip(_ item: NSMenuItem) {
+        item.state = item.state == .on ? .off : .on
+        AppSettings.showControlStripState = item.state == .off
         TouchBarController.shared.resetControlStrip()
-        createMenu()
     }
 
     @objc func toggleBlackListedApp(_: Any?) {
-        let appIdentifier = TouchBarController.shared.frontmostApplicationIdentifier
-        if appIdentifier != nil {
-            if let index = TouchBarController.shared.blacklistAppIdentifiers.index(of: appIdentifier!) {
+        if let appIdentifier = TouchBarController.shared.frontmostApplicationIdentifier {
+            if let index = TouchBarController.shared.blacklistAppIdentifiers.firstIndex(of: appIdentifier) {
                 TouchBarController.shared.blacklistAppIdentifiers.remove(at: index)
             } else {
-                TouchBarController.shared.blacklistAppIdentifiers.append(appIdentifier!)
+                TouchBarController.shared.blacklistAppIdentifiers.append(appIdentifier)
             }
-
-            UserDefaults.standard.set(TouchBarController.shared.blacklistAppIdentifiers, forKey: "com.toxblh.mtmr.blackListedApps")
-            UserDefaults.standard.synchronize()
-
+            
+            AppSettings.blacklistedAppIds = TouchBarController.shared.blacklistAppIdentifiers
             TouchBarController.shared.updateActiveApp()
             updateIsBlockedApp()
         }
+    }
+
+    @objc func toggleHapticFeedback(_ item: NSMenuItem) {
+        item.state = item.state == .on ? .off : .on
+        AppSettings.hapticFeedbackState = item.state == .on
+        HapticFeedbackUpdate()
+    }
+
+    @objc func toggleMultitouch(_ item: NSMenuItem) {
+        item.state = item.state == .on ? .off : .on
+        AppSettings.multitouchGestures = item.state == .on
+        TouchBarController.shared.scrollArea?.gesturesEnabled = item.state == .on
     }
 
     @objc func openPreset(_: Any?) {
@@ -122,7 +127,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toggleBlackList.state = isBlockedApp ? .on : .off
 
         let hideControlStrip = NSMenuItem(title: "Hide Control Strip", action: #selector(toggleControlStrip(_:)), keyEquivalent: "T")
-        hideControlStrip.state = TouchBarController.shared.showControlStripState ? .off : .on
+        hideControlStrip.state = AppSettings.showControlStripState ? .off : .on
+
+        let hapticFeedback = NSMenuItem(title: "Haptic Feedback", action: #selector(toggleHapticFeedback(_:)), keyEquivalent: "H")
+        hapticFeedback.state = AppSettings.hapticFeedbackState ? .on : .off
+
+        let multitouchGestures = NSMenuItem(title: "Volume/Brightness gestures", action: #selector(toggleMultitouch(_:)), keyEquivalent: "")
+        multitouchGestures.state = AppSettings.multitouchGestures ? .on : .off
 
         let settingSeparator = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
         settingSeparator.isEnabled = false
@@ -133,9 +144,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(settingSeparator)
+        menu.addItem(hapticFeedback)
         menu.addItem(hideControlStrip)
         menu.addItem(toggleBlackList)
         menu.addItem(startAtLogin)
+        menu.addItem(multitouchGestures)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu

@@ -23,34 +23,40 @@ extension ItemType {
             return "com.toxblh.mtmr.staticButton."
         case .appleScriptTitledButton(source: _):
             return "com.toxblh.mtmr.appleScriptButton."
-        case .timeButton(formatTemplate: _, timeZone: _):
+        case .shellScriptTitledButton(source: _):
+            return "com.toxblh.mtmr.shellScriptButton."
+        case .timeButton(formatTemplate: _, timeZone: _, locale: _):
             return "com.toxblh.mtmr.timeButton."
-        case .battery():
+        case .battery:
             return "com.toxblh.mtmr.battery."
-        case .dock(autoResize: _):
+        case .dock(autoResize: _, filter: _):
             return "com.toxblh.mtmr.dock"
-        case .volume():
+        case .volume:
             return "com.toxblh.mtmr.volume"
         case .brightness(refreshInterval: _):
             return "com.toxblh.mtmr.brightness"
         case .weather(interval: _, units: _, api_key: _, icon_type: _):
             return "com.toxblh.mtmr.weather"
+        case .yandexWeather(interval: _):
+            return "com.toxblh.mtmr.yandexWeather"
         case .currency(interval: _, from: _, to: _, full: _):
             return "com.toxblh.mtmr.currency"
-        case .inputsource():
+        case .inputsource:
             return "com.toxblh.mtmr.inputsource."
         case .music(interval: _):
             return "com.toxblh.mtmr.music."
-        case .groupBar(items: _):
+        case .group(items: _):
             return "com.toxblh.mtmr.groupBar."
-        case .nightShift(items: _):
+        case .nightShift:
             return "com.toxblh.mtmr.nightShift."
-        case .dnd(items: _):
+        case .dnd:
             return "com.toxblh.mtmr.dnd."
         case .pomodoro(interval: _):
             return PomodoroBarItem.identifier
         case .network(flip: _):
             return NetworkBarItem.identifier
+        case .darkMode:
+            return DarkModeBarItem.identifier
         }
     }
 }
@@ -72,22 +78,12 @@ class TouchBarController: NSObject, NSTouchBarDelegate {
     var centerIdentifiers: [NSTouchBarItem.Identifier] = []
     var centerItems: [NSTouchBarItem] = []
     var rightIdentifiers: [NSTouchBarItem.Identifier] = []
-    var scrollArea: NSCustomTouchBarItem?
+    var scrollArea: ScrollViewItem?
     var centerScrollArea = NSTouchBarItem.Identifier("com.toxblh.mtmr.scrollArea.".appending(UUID().uuidString))
-
-    var showControlStripState: Bool {
-        get {
-            return UserDefaults.standard.bool(forKey: "com.toxblh.mtmr.settings.showControlStrip")
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "com.toxblh.mtmr.settings.showControlStrip")
-        }
-    }
 
     var blacklistAppIdentifiers: [String] = []
     var frontmostApplicationIdentifier: String? {
-        guard let frontmostId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return nil }
-        return frontmostId
+        return NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     }
 
     private override init() {
@@ -101,10 +97,8 @@ class TouchBarController: NSObject, NSTouchBarDelegate {
             }), longAction: .none, parameters: [.width: .width(30), .image: .image(source: (NSImage(named: NSImage.stopProgressFreestandingTemplateName))!)])
         }
 
-        if let blackListed = UserDefaults.standard.stringArray(forKey: "com.toxblh.mtmr.blackListedApps") {
-            blacklistAppIdentifiers = blackListed
-        }
-
+        blacklistAppIdentifiers = AppSettings.blacklistedAppIds
+        
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(activeApplicationChanged), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(activeApplicationChanged), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(activeApplicationChanged), name: NSWorkspace.didActivateApplicationNotification, object: nil)
@@ -133,6 +127,7 @@ class TouchBarController: NSObject, NSTouchBarDelegate {
 
         centerScrollArea = NSTouchBarItem.Identifier("com.toxblh.mtmr.scrollArea.".appending(UUID().uuidString))
         scrollArea = ScrollViewItem(identifier: centerScrollArea, items: centerItems)
+        scrollArea?.gesturesEnabled = AppSettings.multitouchGestures
 
         touchBar.delegate = self
         touchBar.defaultItemIdentifiers = []
@@ -146,7 +141,7 @@ class TouchBarController: NSObject, NSTouchBarDelegate {
     }
 
     func updateActiveApp() {
-        if frontmostApplicationIdentifier != nil && blacklistAppIdentifiers.index(of: frontmostApplicationIdentifier!) != nil {
+        if frontmostApplicationIdentifier != nil && blacklistAppIdentifiers.firstIndex(of: frontmostApplicationIdentifier!) != nil {
             dismissTouchBar()
         } else {
             presentTouchBar()
@@ -209,7 +204,7 @@ class TouchBarController: NSObject, NSTouchBarDelegate {
     }
 
     @objc private func presentTouchBar() {
-        if showControlStripState {
+        if AppSettings.showControlStripState {
             updateControlStripPresence()
             presentSystemModal(touchBar, systemTrayItemIdentifier: .controlStripItem)
         } else {
@@ -247,12 +242,22 @@ class TouchBarController: NSObject, NSTouchBarDelegate {
             barItem = CustomButtonTouchBarItem(identifier: identifier, title: title)
         case let .appleScriptTitledButton(source: source, refreshInterval: interval):
             barItem = AppleScriptTouchBarItem(identifier: identifier, source: source, interval: interval)
-        case let .timeButton(formatTemplate: template, timeZone: timeZone):
-            barItem = TimeTouchBarItem(identifier: identifier, formatTemplate: template, timeZone: timeZone)
-        case .battery():
+        case let .shellScriptTitledButton(source: source, refreshInterval: interval):
+            barItem = ShellScriptTouchBarItem(identifier: identifier, source: source, interval: interval)
+        case let .timeButton(formatTemplate: template, timeZone: timeZone, locale: locale):
+            barItem = TimeTouchBarItem(identifier: identifier, formatTemplate: template, timeZone: timeZone, locale: locale)
+        case .battery:
             barItem = BatteryBarItem(identifier: identifier)
-        case let .dock(autoResize: autoResize):
-            barItem = AppScrubberTouchBarItem(identifier: identifier, autoResize: autoResize)
+        case let .dock(autoResize: autoResize, filter: regexString):
+            if let regexString = regexString {
+                guard let regex = try? NSRegularExpression(pattern: regexString, options: []) else {
+                    barItem = CustomButtonTouchBarItem(identifier: identifier, title: "Bad regex")
+                    break
+                }
+                barItem = AppScrubberTouchBarItem(identifier: identifier, autoResize: autoResize, filter: regex)
+            } else {
+                barItem = AppScrubberTouchBarItem(identifier: identifier, autoResize: autoResize)
+            }
         case .volume:
             if case let .image(source)? = item.additionalParameters[.image] {
                 barItem = VolumeViewController(identifier: identifier, image: source.image)
@@ -267,22 +272,26 @@ class TouchBarController: NSObject, NSTouchBarDelegate {
             }
         case let .weather(interval: interval, units: units, api_key: api_key, icon_type: icon_type):
             barItem = WeatherBarItem(identifier: identifier, interval: interval, units: units, api_key: api_key, icon_type: icon_type)
+        case let .yandexWeather(interval: interval):
+            barItem = YandexWeatherBarItem(identifier: identifier, interval: interval)
         case let .currency(interval: interval, from: from, to: to, full: full):
             barItem = CurrencyBarItem(identifier: identifier, interval: interval, from: from, to: to, full: full)
-        case .inputsource():
+        case .inputsource:
             barItem = InputSourceBarItem(identifier: identifier)
-        case let .music(interval: interval):
-            barItem = MusicBarItem(identifier: identifier, interval: interval)
-        case let .groupBar(items: items):
+        case let .music(interval: interval, disableMarquee: disableMarquee):
+            barItem = MusicBarItem(identifier: identifier, interval: interval, disableMarquee: disableMarquee)
+        case let .group(items: items):
             barItem = GroupBarItem(identifier: identifier, items: items)
-        case .nightShift():
+        case .nightShift:
             barItem = NightShiftBarItem(identifier: identifier)
-        case .dnd():
+        case .dnd:
             barItem = DnDBarItem(identifier: identifier)
         case let .pomodoro(workTime: workTime, restTime: restTime):
             barItem = PomodoroBarItem(identifier: identifier, workTime: workTime, restTime: restTime)
         case let .network(flip: flip):
             barItem = NetworkBarItem(identifier: identifier, flip: flip)
+        case .darkMode:
+            barItem = DarkModeBarItem(identifier: identifier)
         }
 
         if let action = self.action(forItem: item), let item = barItem as? CustomButtonTouchBarItem {
